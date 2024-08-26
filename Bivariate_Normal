@@ -1,0 +1,188 @@
+# HMC 
+
+
+import numpy as np
+import random
+import math
+import matplotlib.pyplot as plt
+import seaborn as sns
+import scipy.stats as ss
+from scipy.stats import multivariate_normal
+from google.colab import files
+
+def HMCMC(U, grad_U, epsilon, L, initial_q, N):
+  mu, sigma = 0, 1
+  q = initial_q
+  chain=q
+  rejections=0
+  for i in range(1,N):
+    p = np.array([np.random.normal(mu, sigma, q.shape[1])])
+    actual_p = p
+    p=p- epsilon * grad_U(q) / 2
+    for i in range(1,L+1):
+      q= q+epsilon*p
+      if(i!=L):
+        p=p-epsilon*grad_U(q)
+    p= p - epsilon * grad_U(q) / 2
+    p = -p
+    actual_U = U(initial_q)
+    actual_K = np.sum(actual_p**2) / 2
+    proposal_U = U(q)
+    proposal_K = np.sum(p**2) / 2
+    if random.uniform(0, 1) < np.exp(actual_U-proposal_U+actual_K-proposal_K):
+      chain=np.r_[chain,q]
+      initial_q=q
+    else:
+      chain=np.r_[chain,initial_q]
+      rejections=rejections+1
+  return(chain, rejections)
+
+sigma_bivariate=np.array([[1,-0.85],[-0.85,1]])
+sigma_bivariate_inv=np.linalg.inv(sigma_bivariate)
+def U(q):
+  return(1/2*q.dot( sigma_bivariate_inv ).dot(np.transpose(q))[0][0])
+
+def grad_U(q):
+ return(np.transpose(sigma_bivariate_inv.dot(np.transpose(q))))
+
+np.random.seed(0)
+random.seed(0)
+simulation=HMCMC(U,grad_U,0.15,35,np.array([[-7,-7]]),30)
+chain_raw= simulation[0]
+rejection_rate= simulation[1]/(chain_raw.shape[0]-1)
+acceptance_rate = 1- rejection_rate
+acceptance_rate
+
+x, y = np.mgrid[-8.3:3.8:.2, -8.3:3.8:.2]
+pos = np.dstack((x, y))
+rv = multivariate_normal([0, 0], [[1, -0.85], [-0.85, 1]])
+fig2 = plt.figure()
+ax2 = fig2.add_subplot(111)
+ax2.contourf(x, y, rv.pdf(pos), 10)
+plt.plot(chain_raw[:,0], chain_raw[:,1], '.', c='red')
+plt.plot(chain_raw[:,0], chain_raw[:,1], "r")
+
+plt.ylabel(r'$q_{2}$')
+plt.xlabel(r'$q_{1}$')
+#plt.savefig("biv_ham.png",bbox_inches='tight',dpi=300)
+#files.download("biv_ham.png")
+
+
+# RWMH 
+
+#RANDOM WALK METROPOLIS HASTINGS
+import numpy as np
+import random
+import math
+import matplotlib.pyplot as plt
+import seaborn as sns
+import scipy.stats as ss
+from scipy.stats import multivariate_normal
+from google.colab import files
+
+sigma_bivariada=np.array([[1,-0.85],[-0.85,1]])
+
+def U(q):
+  return(np.exp(-1/2*q.dot(np.linalg.inv(sigma_bivariada)).dot(np.transpose(q))[0][0]))    
+
+def RWMH(p_ini, density, mu, sigma, N):
+  count=0
+  sample=p_ini
+  for i in range(1, N):
+    proposal=p_ini+np.random.normal(mu, sigma, p_ini.shape[1])
+    rate = min(density(proposal)/density(p_ini),1)
+    if random.uniform(0, 1) < rate:
+      actual=proposal
+      p_ini=proposal
+
+    else:
+      actual=p_ini
+      count=count+1
+    sample=np.r_[sample,actual]
+  return(sample, count)
+
+np.random.seed(0)
+random.seed(0)
+sample=RWMH(np.array([[-7,-7]]),U,0,0.15, 30*35)
+
+rejection_rate2= sample[1]/(sample[0].shape[0]-1)
+acceptance_rate2 = 1- rejection_rate2
+acceptance_rate2
+
+simulations=sample[0]
+simulations2= simulations[np.arange(0,len(simulations),35)]
+len(simulations2)
+
+x, y = np.mgrid[-8.3:3.8:.2, -8.3:3.8:.2]
+pos = np.dstack((x, y))
+rv = multivariate_normal([0, 0], [[1, -0.85], [-0.85, 1]])
+fig2 = plt.figure()
+ax2 = fig2.add_subplot(111)
+ax2.contourf(x, y, rv.pdf(pos), 10)
+plt.plot(simulations2[:,0],simulations2[:,1], '.', c='red')
+plt.plot(simulations2[:,0], simulations2[:,1], "r")
+plt.gca().axes.yaxis.set_ticklabels([])
+plt.xlabel(r'$q_{1}$')
+
+#plt.savefig("biv_rwmh.png",bbox_inches='tight',dpi=300)
+#files.download("biv_rwmh.png")
+
+
+# t-walk
+
+
+
+import numpy as np
+import random
+import math
+import matplotlib.pyplot as plt
+import seaborn as sns
+import scipy.stats as ss
+from matplotlib import pyplot
+from statsmodels.graphics.tsaplots import plot_acf
+from statsmodels.graphics.tsaplots import plot_pacf
+from google.colab import files
+import scipy.stats
+import time
+from scipy.stats import multivariate_normal
+
+!pip install '/content/pytwalk-1.6.0 (4).tar.gz'
+
+import pytwalk as pt
+
+sigma_bivariate = np.array([[1, -0.85], [-0.85, 1]])
+sigma_bivariate_inv = np.linalg.inv(sigma_bivariate)
+
+def U(q):
+    return (1/2) * q.dot(sigma_bivariate_inv).dot(q.T)
+A=pt.pytwalk( n=2, U=U)
+
+np.random.seed(0)
+random.seed(0)
+t0 = time.time()
+A.Run( T=30*35-1, x0=-7*np.ones(2), xp0=-6.5*np.ones(2))
+t1 = time.time()
+print("--- %s seconds ---" % (t1- t0))
+
+A.Ana()
+AA=A.Output
+samples = AA[:, :-1]
+
+simulations2=samples
+simulation2= simulations2[np.arange(0,len(simulations2),35)]
+len(simulation2)
+
+x, y = np.mgrid[-8.3:3.8:.2, -8.3:3.8:.2]
+pos = np.dstack((x, y))
+rv = multivariate_normal([0, 0], [[1, -0.85], [-0.85, 1]])
+fig2 = plt.figure()
+ax2 = fig2.add_subplot(111)
+ax2.contourf(x, y, rv.pdf(pos), 10)
+plt.plot(simulation2[:,0], simulation2[:,1], '.', c='red')
+plt.plot(simulation2[:,0], simulation2[:,1], "r")
+ax2.set_yticklabels([])
+plt.xlabel(r'$q_{1}$')
+#plt.gca().axes.yaxis.set_ticklabels([])
+
+#plt.savefig("biv_twalk.png",bbox_inches='tight',dpi=300)
+#files.download("biv_twalk.png")
