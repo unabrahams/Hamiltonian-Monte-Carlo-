@@ -1,0 +1,535 @@
+# HMC 
+
+
+import numpy as np
+import random
+import math
+import matplotlib.pyplot as plt
+import seaborn as sns
+import scipy.stats
+from scipy.stats import multivariate_normal
+from google.colab import files
+from statsmodels.graphics.tsaplots import plot_acf
+import time
+
+y=np.array([[2.8,0.8,-0.3,0.7,-0.1,0.1,1.8,1.2]])
+deviation_example=np.array([[0.8,0.5,0.8,0.6,0.5,0.6,0.5,0.4]])
+
+def U(parameters):   #Log  posterior distribution
+  eta, mu2, tau = parameters[0][0:8],parameters[0][8], parameters[0][9]
+  log_prior = -np.sum(scipy.stats.norm(0, 1).logpdf(parameters))
+  log_likelihood = -np.sum(scipy.stats.norm(mu2 + eta *tau, deviation_example).logpdf(y))
+  return(log_prior + log_likelihood)
+
+def grad_U(parameters):   #Target distribution grad
+    eta, mu2, tau = parameters[0][0:8],parameters[0][8], parameters[0][9]
+    d_tau = tau - np.sum(((y-(mu2+tau*eta))/deviation_example**2)*eta)  #parameters to estimate
+    d_mu = mu2 - np.sum(((y-(mu2+tau*eta))/deviation_example**2))
+    d_eta= eta - ((y-(mu2+tau*eta))/deviation_example**2)*(tau)
+    return(np.concatenate((d_eta, np.array([[d_mu]]),np.array([[d_tau]]) ), axis=1))
+
+def HMCMC(U, grad_U, epsilon, L, initial_q, N):
+  mu, sigma = 0, 1
+  q = initial_q
+  chain=q
+  rejections=0
+
+  for i in range(1,N):
+
+    p = np.array([np.random.normal(mu, sigma, q.shape[1])])
+
+    actual_p = p
+    p=p- epsilon * grad_U(q) / 2
+    for i in range(1,L+1):
+      q= q+epsilon*p
+      if(i!=L):
+        p=p-epsilon*grad_U(q)
+    p= p - epsilon * grad_U(q) / 2  #leapfrog algorithm
+    p = -p
+    actual_U = U(initial_q)
+    actual_K = np.sum(actual_p**2) / 2
+    proposal_U = U(q)
+    proposal_K = np.sum(p**2) / 2
+    if random.uniform(0, 1) < np.exp(actual_U-proposal_U+actual_K-proposal_K):
+      chain=np.r_[chain,q]
+      initial_q=q
+      print(len(chain))
+
+    else:
+      chain=np.r_[chain,initial_q]
+      rejections=rejections+1
+
+  return(chain, rejections)
+
+np.random.seed(0)
+random.seed(0)
+t0 = time.time()
+AA=HMCMC(U,grad_U,0.08,60,np.array([[2,2,2,2,2,2,2,2,2,2]]),500000)
+t1 = time.time()
+print("--- %s seconds ---" % (t1- t0))
+
+1-AA[1]/len(AA[0]-1)   #Acceptance rate
+
+vector_verosim2 = np.zeros(1000)
+for i in range(0,1000):
+  if i==0:
+    logverosimilitud=-U(np.array([AA[0][i]]))
+  else:
+    logverosimilitud=np.r_[logverosimilitud,-U(np.array([AA[0][i]]))]
+
+burnin=100
+plt.grid(linestyle='dashed')
+plt.plot(logverosimilitud)
+plt.ylabel('$log(S(X_{t}))$')
+plt.xlabel('$X_{t}$')
+plt.axvline(burnin,-100,100,  color="red",  linestyle='dashed')
+#plt.savefig("burnhmc1.png",bbox_inches='tight',dpi=300)
+#files.download("burnhmc1.png")
+
+tau_sb = AA[0][:,9][burnin:len(AA[0]) ]
+mu_sb=AA[0][:,8][burnin:len(AA[0]) ]
+eta1_sb=AA[0][:,0][burnin:len(AA[0]) ]
+
+len(eta1_sb)
+
+fig=plot_acf(mu_sb, lags=100,alpha=0.05)  #autocorrelations
+plt.grid(linestyle='dashed')
+plt.title("")
+plt.ylabel('Autocorrelation')
+plt.xlabel('Lag')
+
+#fig.savefig("autocor_1.png",bbox_inches='tight',dpi=300)
+#files.download("autocor_1.png")
+
+fig=plot_acf(mu_sb, lags=100,alpha=0.05)  #autocorrelations
+plt.grid(linestyle='dashed')
+plt.title("")
+plt.ylabel('Autocorrelation')
+plt.xlabel('Lag')
+
+#fig.savefig("autocor_1.png",bbox_inches='tight',dpi=300)
+#files.download("autocor_1.png")
+
+fig=plot_acf(tau_sb,lags=100,alpha=0.05)  #autocorrelations
+plt.grid(linestyle='dashed')
+plt.title("")
+plt.ylabel('Autocorrelation')
+plt.xlabel('Lag')
+
+#fig.savefig("tauhmc.png",bbox_inches='tight',dpi=300)
+#files.download("tauhmc.png")
+
+#Auto correlations plot
+import matplotlib.pyplot as plt
+from statsmodels.graphics.tsaplots import plot_acf
+from matplotlib.collections import PolyCollection, LineCollection
+
+curr_fig, curr_ax = plt.subplots(figsize=(10, 8))
+plot_acf(tau_sb, lags=100, alpha=0.05, ax=curr_ax)
+for item in curr_ax.collections:
+    if isinstance(item, PolyCollection):
+        item.set_facecolor("dodgerblue")
+    if isinstance(item, LineCollection):
+        item.set_color("black")
+
+for item in curr_ax.lines:
+    item.set_color("dodgerblue")
+
+plt.grid(linestyle='dashed')
+plt.title("")
+plt.xlabel('Lag')
+plt.ylim(-0.2, 1.05)
+plt.ylabel('Autocorrelation')
+
+plt.show()
+curr_fig.savefig("tauhmc.png", bbox_inches='tight', dpi=300)
+import os
+from google.colab import files
+files.download("tauhmc.png")
+
+fig=plot_acf(eta1_sb, lags=100,alpha=0.05)  #autocorrelations
+plt.grid(linestyle='dashed')
+plt.title("")
+plt.ylabel('Autocorrelation')
+plt.xlabel('Lag')
+
+lag=35
+tau_sl = tau_sb[np.arange(0,len(tau_sb),lag )]
+mu_sl=mu_sb[np.arange(0,len(mu_sb),lag )]
+eta1_sl=eta1_sb[np.arange(0,len(eta1_sb),lag )]
+
+len(tau_sl)
+
+sns.kdeplot(x=mu_sl, y=tau_sl, fill=True, levels=20)
+plt.grid(linestyle='dashed')
+plt.ylabel(r'$\tau$')
+plt.xlabel('$\mu$')
+plt.xlim(-1, 2)
+plt.ylim(-2.4, 2.3)
+
+
+#plt.savefig("unohmc.png",bbox_inches='tight',dpi=300)
+#files.download("unohmc.png")
+
+sns.kdeplot( x=tau_sl,y=eta1_sl, fill=True, levels=20)
+plt.grid(linestyle='dashed')
+plt.xlabel(r'$\tau$')
+plt.ylabel(r'$\eta_{1}$')
+plt.xlim(-2.8, 2.5)
+plt.ylim(-4.2, 5)
+#plt.savefig("doshmc.png",bbox_inches='tight',dpi=300)
+#files.download("doshmc.png")
+
+"""## 200 samples example"""
+
+t0 = time.time()
+np.random.seed(0)
+random.seed(0)
+AA=HMCMC(U,grad_U,0.08,60,np.array([[2,2,2,2,2,2,2,2,2,2]]),100+35*500)
+t1 = time.time()
+print("--- %s seconds ---" % (t1- t0))
+
+1-AA[1]/len(AA[0]-1)
+
+burnin=100
+lag=35
+tau_sl = AA[0][:,9][burnin:len(AA[0]) ][np.arange(0, len(AA[0]) -burnin,lag )]
+mu_sl=AA[0][:,8][burnin:len(AA[0]) ][np.arange(0, len(AA[0]) -burnin,lag )]
+eta1_sl=AA[0][:,0][burnin:len(AA[0]) ][np.arange(0, len(AA[0]) -burnin,lag )]
+
+sns.kdeplot(mu_sl, tau_sl, fill=True, levels=20)
+plt.grid(linestyle='dashed')
+plt.ylabel(r'$\tau$')
+plt.xlabel('$\mu$')
+plt.xlim(-1, 2)
+plt.ylim(-2.2, 2.3)
+
+#plt.savefig("unohmc500.png",bbox_inches='tight',dpi=300)
+#files.download("unohmc500.png")
+
+sns.kdeplot( tau_sl,eta1_sl, fill=True, levels=20)
+plt.grid(linestyle='dashed')
+plt.xlabel(r'$\tau$')
+plt.ylabel(r'$\eta_{1}$')
+plt.xlim(-2.8, 2.5)
+plt.ylim(-4.2, 5)
+#plt.savefig("doshmc500.png",bbox_inches='tight',dpi=300)
+#files.download("doshmc500.png")
+
+
+
+
+# RWMH 
+
+
+import numpy as np
+import random
+import math
+import matplotlib.pyplot as plt
+import scipy.stats as ss
+from scipy.stats import multivariate_normal
+from google.colab import files
+import time
+
+mean1= [-4, -4]
+mean2=[5, 5]
+SIGMA1=  [[1, 0.5], [0.5, 1]]
+SIGMA2= [[1, -0.3], [-0.3, 1]]
+
+SIGMA1_INV=np.linalg.inv(SIGMA1)
+SIGMA2_INV=np.linalg.inv(SIGMA2)
+
+def bivariate_mixture(q):
+ return(multivariate_normal(mean1, SIGMA1).pdf(q) * 0.4  +  0.6 * multivariate_normal(mean2, SIGMA2).pdf(q) )
+def U(q):
+ return(-np.log(bivariate_mixture(q)))
+def grad_norm_vib(q,mean, desv,inverse):
+ return(-multivariate_normal(mean, desv).pdf(q)*np.transpose(inverse.dot(np.transpose(q-mean))))
+def grad_U(q):
+ return((0.4* grad_norm_vib(q,mean1, SIGMA1, SIGMA1_INV) + 0.6*grad_norm_vib(q,mean2, SIGMA2,SIGMA2_INV))/-bivariate_mixture(q))
+
+def HMCMC(U, grad_U, epsilon, L, initial_q, N):
+  mu, sigma = 0, 1
+  q = initial_q
+  chain=q
+  rejections=0
+  for i in range(1,N):
+    p = np.array([np.random.normal(mu, sigma, q.shape[1])])
+    actual_p = p
+    for i in range(1,L+1):
+      q= q+epsilon*p
+      if(i!=L):
+        p=p-epsilon*grad_U(q)
+
+    p= p - epsilon * grad_U(q) / 2
+    p = -p
+    actual_U = U(initial_q)
+    actual_K = np.sum(actual_p**2) / 2
+    proposal_U = U(q)
+    proposal_K = np.sum(p**2) / 2
+
+    if random.uniform(0, 1) < np.exp(actual_U-proposal_U+actual_K-proposal_K):
+      chain=np.r_[chain,q]
+      initial_q=q
+
+    else:
+      chain=np.r_[chain,initial_q]
+      rejections=rejections+1
+  return(chain, rejections)
+
+q=np.array([[-9,-9]])
+np.random.seed(0)
+random.seed(0)
+t0_HMC = time.time()
+sample_h=HMCMC(U,grad_U,0.2,30,q, 5000)
+t1_HMC = time.time()
+print("--- %s seconds ---" % (t1_HMC- t0_HMC))
+
+rejection_rate= sample_h[1]/(sample_h[0].shape[0]-1)
+acceptance_rate = 1- rejection_rate
+acceptance_rate
+
+sample_th=sample_h[0]
+q1=sample_th[:,0]
+q2=sample_th[:,1]
+
+x, y = np.mgrid[-10:10:.3, -10:10:.3]
+pos = np.dstack((x, y))
+
+fig2 = plt.figure()
+ax2 = fig2.add_subplot(111)
+ax2.contourf(x, y, bivariate_mixture(pos), 10)
+plt.plot(q1, q2, 'o', c='red', alpha=0.3)
+plt.xlabel(r'$q_{1}$')
+plt.ylabel(r'$q_{2}$')
+#plt.gca().axes.yaxis.set_ticklabels([])
+#plt.savefig("mezclah1.png",bbox_inches='tight',dpi=300)
+#files.download("mezclah1.png")
+
+#plt.plot(q1, q2, "r")
+
+"""#Initial point (2.5,2.5)"""
+
+q_initial2=np.array([[2.5,2.5]])
+np.random.seed(0)
+random.seed(0)
+t2_HMC = time.time()
+sample_h2=HMCMC(U,grad_U,0.2,30,q_initial2, 5000)
+t3_HMC = time.time()
+print("--- %s seconds ---" % (t3_HMC- t2_HMC))
+
+rejection_rate2= sample_h2[1]/(sample_h2[0].shape[0]-1)
+acceptance_rate2 = 1- rejection_rate2
+acceptance_rate2
+
+sample_th2=sample_h2[0]
+q1_2=sample_th2[:,0]
+q2_2=sample_th2[:,1]
+
+x, y = np.mgrid[-10:10:.3, -10:10:.3]
+pos = np.dstack((x, y))
+
+fig2 = plt.figure()
+ax2 = fig2.add_subplot(111)
+ax2.contourf(x, y, bivariate_mixture(pos), 10)
+plt.plot(q1_2, q2_2, 'o', c='red', alpha=0.3)
+plt.xlabel(r'$q_{1}$')
+plt.ylabel(r'$q_{2}$')
+
+#plt.gca().axes.yaxis.set_ticklabels([])
+#plt.savefig("mezclah2.png",bbox_inches='tight',dpi=300)
+#files.download("mezclah2.png")
+
+
+# t-walk
+
+
+
+import numpy as np
+import random
+import math
+import matplotlib.pyplot as plt
+import seaborn as sns
+import scipy.stats as ss
+from matplotlib import pyplot
+from statsmodels.graphics.tsaplots import plot_acf
+from statsmodels.graphics.tsaplots import plot_pacf
+from google.colab import files
+import scipy.stats
+import time
+
+"""#t-walk"""
+
+!pip install '/content/pytwalk-1.6.0 (4).tar.gz'
+
+import pytwalk as pt
+
+y=np.array([[2.8,0.8,-0.3,0.7,-0.1,0.1,1.8,1.2]])
+example_deviation=np.array([[0.8,0.5,0.8,0.6,0.5,0.6,0.5,0.4]])
+
+def verosimilitud(parameters):   #log distribution
+  eta, mu2, tau = parameters[0:8],parameters[8], parameters[9]
+  log_prior = np.sum(scipy.stats.norm(0, 1).logpdf(parameters))
+  log_likelihood = np.sum(scipy.stats.norm(mu2 + eta *tau, example_deviation).logpdf(y))
+  return(log_prior + log_likelihood)
+
+def fU(parameters):
+  eta, mu2, tau = parameters[0:8],parameters[8], parameters[9]
+  log_prior = -np.sum(scipy.stats.norm(0, 1).logpdf(parameters))
+  log_likelihood = -np.sum(scipy.stats.norm(mu2 + eta *tau, example_deviation).logpdf(y))
+  return(log_prior + log_likelihood)
+
+def fUSupp(x):
+	return all( x)
+
+hh= pt.pytwalk( n=5, U=fU, Supp=fUSupp)
+
+A=pt.pytwalk( n=10, U=fU, Supp=fUSupp)
+
+np.random.seed(0)
+random.seed(0)
+t0 = time.time()
+A.Run( T=500000, x0=3*np.ones(10), xp0=2*np.ones(10))
+t1 = time.time()
+print("--- %s seconds ---" % (t1- t0))
+
+A.Ana()
+
+AA=A.Output
+
+vector_verosim2 = np.zeros(1000)
+for i in range(0,1000):
+
+  if i==0:
+    logverosimilitud=verosimilitud(AA[i][0:10])
+  else:
+    logverosimilitud=np.r_[logverosimilitud,verosimilitud(AA[i][0:10])]
+
+burnin=200
+plt.grid(linestyle='dashed')
+plt.plot(logverosimilitud)
+plt.xlabel('$X_{t}$')
+plt.axvline(burnin,-100,100,  color="red",  linestyle='dashed')
+#plt.savefig("burntw.png",bbox_inches='tight',dpi=300)
+#files.download("burntw.png")
+
+tau_sb = AA[:,9][burnin:len(AA[:,0])]
+mu_sb=AA[:,8][burnin:len(AA[:,0])]
+eta1_sb=AA[:,0][burnin:len(AA[:,0])]
+
+len(tau_sb)
+
+fig=plot_acf(mu_sb, lags=10000,alpha=0.05)  #autocorrelations
+plt.grid(linestyle='dashed')
+plt.title("")
+plt.ylabel('Autocorrelation')
+plt.xlabel('Lag')
+
+#fig.savefig("autocor_1.png",bbox_inches='tight',dpi=300)
+#files.download("autocor_1.png")
+
+import matplotlib.pyplot as plt
+from statsmodels.graphics.tsaplots import plot_acf
+from matplotlib.collections import PolyCollection, LineCollection
+
+curr_fig, curr_ax = plt.subplots(figsize=(10, 8))
+plot_acf(tau_sb, lags=20000, alpha=0.05, ax=curr_ax)
+
+for item in curr_ax.collections:
+    if isinstance(item, PolyCollection):
+        item.set_facecolor("dodgerblue")
+    if isinstance(item, LineCollection):
+        item.set_color("black")
+
+for item in curr_ax.lines:
+    item.set_color("dodgerblue")
+
+plt.grid(linestyle='dashed')
+plt.title("")
+plt.xlabel('Lag')
+plt.ylim(-0.2, 1.05)
+plt.gca().axes.yaxis.set_ticklabels([])
+
+plt.show()
+
+curr_fig.savefig("tau_tw.png", bbox_inches='tight', dpi=300)
+
+import os
+from google.colab import files
+#files.download("tau_tw.png")
+
+fig=plot_acf(eta1_sb, lags=20000,alpha=0.05)  #autocorrelations
+plt.grid(linestyle='dashed')
+plt.title("")
+plt.ylabel('Autocorrelation')
+plt.xlabel('Lag')
+
+lag=11000
+tau_sl = tau_sb[np.arange(0,len(tau_sb),lag )]
+mu_sl=mu_sb[np.arange(0,len(mu_sb),lag )]
+eta1_sl=eta1_sb[np.arange(0,len(eta1_sb),lag )]
+
+sns.kdeplot(x=mu_sl, y=tau_sl, fill=True, levels=20)
+plt.grid(linestyle='dashed')
+plt.ylabel(r'$\tau$')
+plt.xlabel('$\mu$')
+plt.xlim(-1, 2)
+plt.ylim(-2.4, 2.3)
+#plt.savefig("unotw.png",bbox_inches='tight',dpi=300)
+#files.download("unotw.png")
+
+sns.kdeplot(x=mu_sl, y=tau_sl, fill=True, levels=20)
+plt.grid(linestyle='dashed')
+plt.ylabel(r'$\tau$')
+plt.xlabel('$\mu$')
+plt.xlim(-1, 2)
+plt.ylim(-2.4, 2.3)
+#plt.savefig("unotw.png",bbox_inches='tight',dpi=300)
+#files.download("unotw.png")
+
+sns.kdeplot( x=tau_sl,y=eta1_sl, fill=True, levels=20)
+plt.grid(linestyle='dashed')
+plt.xlabel(r'$\tau$')
+plt.ylabel(r'$\eta_{1}$')
+plt.xlim(-2.8, 2.5)
+plt.ylim(-4.2, 5)
+#plt.savefig("dostw.png",bbox_inches='tight',dpi=300)
+#files.download("dostw.png")
+
+len(tau_sl)
+
+"""## 200 samples"""
+
+np.random.seed(0)
+random.seed(0)
+t0 = time.time()
+A.Run( T=500*11000+200, x0=3*np.ones(10), xp0=2*np.ones(10))
+t1 = time.time()
+print("--- %s seconds ---" % (t1- t0))
+
+AA=A.Output
+
+A.Ana()
+
+burnin, lag=200, 11000
+tau_sl = AA[:,9][burnin:len(AA[:,0])][np.arange(0,len(AA[:,0])-burnin,lag )]
+mu_sl=AA[:,8][burnin:len(AA[:,0])][np.arange(0,len(AA[:,0])-burnin,lag )]
+eta1_sl=AA[:,0][burnin:len(AA[:,0])][np.arange(0,len(AA[:,0])-burnin,lag )]
+
+sns.kdeplot(x=mu_sl, y=tau_sl, fill=True, levels=20)
+plt.grid(linestyle='dashed')
+plt.ylabel(r'$\tau$')
+plt.xlabel('$\mu$')
+plt.xlim(-1, 2)
+plt.ylim(-2.2, 2.3)
+#plt.savefig("unotw500.png",bbox_inches='tight',dpi=300)
+#files.download("unotw500.png")
+
+sns.kdeplot( x=tau_sl,y=eta1_sl, fill=True, levels=20)
+plt.grid(linestyle='dashed')
+plt.xlabel(r'$\tau$')
+plt.ylabel(r'$\eta_{1}$')
+plt.xlim(-2.8, 2.5)
+plt.ylim(-4.2, 5)
+#plt.savefig("dostw500.png",bbox_inches='tight',dpi=300)
+#files.download("dostw500.png")
