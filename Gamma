@@ -1,0 +1,442 @@
+# HMC
+
+import numpy as np
+import random
+import math
+import matplotlib.pyplot as plt
+import seaborn as sns
+import scipy.stats as ss
+from matplotlib import pyplot
+from statsmodels.graphics.tsaplots import plot_acf
+from google.colab import files
+import time
+
+#Potential energy
+def U(q):
+  if q>0:
+    return(-4*np.log(q)+np.log(24)+q)
+  else:
+    return(0)
+
+#U gradient
+def grad_U(q):
+  return(-(4/q)+1)
+
+def HMCMC(U, grad_U, epsilon, L, inicial_q, N):
+  mu, sigma = 0, 1
+  q = inicial_q
+  chain=q
+  rejections=0
+
+  for i in range(1,N):
+    p = np.array([np.random.normal(mu, sigma, q.shape[1])])
+
+    actual_p = p
+
+    p=p- epsilon * grad_U(q) / 2
+    for i in range(1,L+1):
+      q= q+epsilon*p
+
+      if(i!=L):
+        p=p-epsilon*grad_U(q)
+
+    p= p - epsilon * grad_U(q) / 2
+
+    p = -p
+    actual_U = U(inicial_q)
+    actual_K = np.sum(actual_p**2) / 2
+    proposal_U = U(q)
+    proposal_K = np.sum(p**2) / 2
+    if random.uniform(0, 1) < np.exp(actual_U-proposal_U+actual_K-proposal_K) and q>0:
+      chain=np.r_[chain,q]
+      inicial_q=q
+
+    else:
+      chain=np.r_[chain,inicial_q]
+      rejections=rejections+1
+  return(chain, rejections)
+
+# Execution
+np.random.seed(0)
+random.seed(0)
+t0 = time.time()
+simulation=HMCMC(U,grad_U,5,6,np.array([[500]]),100000)
+t1 = time.time()
+print("--- %s segundos ---" % (t1- t0))
+
+raw_chain= simulation[0]
+rejection_rate= simulation[1]/(raw_chain.shape[0]-1)
+rejection_rate
+
+"""# Example 2
+
+"""
+
+np.random.seed(0)
+random.seed(0)
+t0 = time.time()
+simulation1=HMCMC(U,grad_U,0.09,47,np.array([[500]]),100000)
+t1 = time.time()
+print("--- %s segundos ---" % (t1- t0)) #Execution time
+
+raw_chain1= simulation1[0]
+rejection_rate1= simulation1[1]/(raw_chain1.shape[0]-1)
+1-rejection_rate1  #acceptance rate
+
+def log_densidades_gamma_r(muest):    #log densities
+  return(np.log(1/24)+4*np.log(muest)-muest)
+
+vector_verosim2 = np.zeros(100)
+for i in range(0,100):
+  vector_verosim2[i]=log_densidades_gamma_r(raw_chain1[i])
+
+burnin=64
+plt.grid(linestyle='dashed')
+plt.plot(vector_verosim2)
+plt.ylabel('$log(S(X_{t}))$')
+plt.xlabel('$X_{t}$')
+plt.axvline(burnin,-100,100,  color="red",  linestyle='dashed')
+
+#plt.savefig("burnhmc1.png",bbox_inches='tight',dpi=300)
+#files.download("burnhmc1.png")
+
+# Commented out IPython magic to ensure Python compatibility.
+# %load_ext rpy2.ipython
+
+# Commented out IPython magic to ensure Python compatibility.
+# %%R
+# install.packages("LaplacesDemon")
+# library("LaplacesDemon")
+
+# Commented out IPython magic to ensure Python compatibility.
+# %R -i raw_chain1
+
+chain_sb=raw_chain1[64:99999]   #burn-in period
+fig=plot_acf(chain_sb, lags=50,alpha=0.05)  #autocorrelations
+plt.grid(linestyle='dashed')
+plt.title("")
+plt.ylabel('Autocorrelation')
+plt.xlabel('Lag')
+plt.ylim(-0.2, 1)
+pyplot.show()
+#fig.savefig("autocorhmc.png",bbox_inches='tight',dpi=300)
+#files.download("autocorhmc.png")
+
+#Autocorrelation plot
+from matplotlib.collections import PolyCollection, LineCollection
+
+curr_fig, curr_ax = plt.subplots(figsize=(10, 8))
+plot_acf(chain_sb, lags=50,alpha=0.05, ax=curr_ax)
+
+for item in curr_ax.collections:
+    if isinstance(item, PolyCollection):
+        item.set_facecolor("dodgerblue")
+    if isinstance(item, LineCollection):
+        item.set_color("black")
+
+for item in curr_ax.lines:
+    item.set_color("dodgerblue")
+
+plt.grid(linestyle='dashed')
+plt.title("")
+plt.xlabel('Lag')
+plt.ylim(-0.2, 1.05)
+plt.ylabel('Autocorrelation', fontsize=16)
+plt.gca().axes.yaxis.set_ticklabels([])
+plt.show()
+curr_fig.savefig("autocorhmc.png", bbox_inches='tight', dpi=300)
+import os
+#from google.colab import files
+#files.download("autocorhmc.png")
+
+# Commented out IPython magic to ensure Python compatibility.
+# %R -i chain_sb
+# %R iat1=IAT(chain_sb)
+# %R  iat1
+
+lag = %R iat1
+lag= math.ceil(lag) #lag
+lag
+
+chain_sl= chain_sb[np.arange(0,len(chain_sb),lag)]  #markov chain after removing lag period
+
+len(chain_sl)
+
+#density plot
+x=np.linspace(0,18,200)
+x_pdf=ss.gamma.pdf(x,a=5,scale=1)
+plt.plot(x,x_pdf, color="red",  linewidth=3)
+
+plt.hist(chain_sl, bins = int(40), density=True, color='teal')
+
+plt.grid(linestyle='dashed')
+plt.legend(('Theoretical', 'Simulated'), bbox_to_anchor=(1.05,0.8), loc=3, borderaxespad=0, prop={'size':9})
+plt.ylabel('Density')
+plt.xlabel('$X_{t}$')
+
+#plt.savefig("densidadgamahmc.png",bbox_inches='tight',dpi=300)
+#files.download("densidadgamahmc.png")
+
+
+# RWMH 
+
+import numpy as np
+import random
+import math
+import matplotlib.pyplot as plt
+import seaborn as sns
+import scipy.stats as ss
+from matplotlib import pyplot
+from statsmodels.graphics.tsaplots import plot_acf
+from google.colab import files
+import time
+
+#RWMH for Gamma(5,1)
+def RWMH_gama51(p_ini, sigma, N):   #RWMH
+  rejections=0
+  sample=p_ini
+  for i in range(1, N):
+    proposal=p_ini+np.random.normal(0, sigma, p_ini.shape[1])
+    rate = min((proposal/p_ini)**4*np.exp(p_ini-proposal),1)
+    if random.uniform(0, 1) < rate and proposal>0:
+      actual=proposal
+      p_ini=proposal
+
+    else:
+      actual=p_ini
+      rejections=rejections+1
+    sample=np.r_[sample,actual]
+  return(sample, rejections)
+
+#simulations
+np.random.seed(0)
+random.seed(0)
+t0 = time.time()
+simulation=RWMH_gama51(np.array([[500]]),5,100000)
+t1 = time.time()
+print("--- %s segundos ---" % (t1- t0))
+
+raw_chain= simulation[0]
+rejection_rate= simulation[1]/(raw_chain.shape[0]-1)
+acceptance_rate=1-rejection_rate
+acceptance_rate  #acceptance rate
+
+def log_densidades_gamma_r(sample2):
+  return(np.log(1/24)+4*np.log(sample2)-sample2)
+
+vector_verosim2 = np.zeros(400)        #log-density
+for i in range(0,400):
+  vector_verosim2[i]=log_densidades_gamma_r(raw_chain[i])
+
+burnin=280
+plt.grid(linestyle='dashed')
+plt.plot(vector_verosim2)
+plt.xlabel('$X_{t}$')
+plt.axvline(burnin,-100,100,  color="red",  linestyle='dashed')
+plt.gca().axes.yaxis.set_ticklabels([])
+
+# Commented out IPython magic to ensure Python compatibility.
+# %load_ext rpy2.ipython
+
+# Commented out IPython magic to ensure Python compatibility.
+# %%R
+# install.packages("LaplacesDemon")
+# library("LaplacesDemon")
+#
+
+# Commented out IPython magic to ensure Python compatibility.
+# %R -i raw_chain
+
+chain_sb=raw_chain[279:99999]
+fig=plot_acf(chain_sb, lags=50,alpha=0.05)
+plt.grid(linestyle='dashed')
+plt.title("")
+plt.xlabel('Lag')
+plt.ylim(-0.2, 1)
+plt.gca().axes.yaxis.set_ticklabels([])
+pyplot.show()
+#fig.savefig("autocor_1.png",bbox_inches='tight',dpi=300)
+#files.download("autocor_1.png")
+
+#autocorrelations plot
+from matplotlib.collections import PolyCollection, LineCollection
+
+curr_fig, curr_ax = plt.subplots(figsize=(10, 8))
+plot_acf(chain_sb, lags=50,alpha=0.05, ax=curr_ax)
+
+for item in curr_ax.collections:
+    if isinstance(item, PolyCollection):
+        item.set_facecolor("dodgerblue")
+    if isinstance(item, LineCollection):
+        item.set_color("black")
+
+for item in curr_ax.lines:
+    item.set_color("dodgerblue")
+
+plt.grid(linestyle='dashed')
+plt.title("")
+plt.xlabel('Lag')
+plt.ylim(-0.2, 1.05)
+plt.gca().axes.yaxis.set_ticklabels([])
+
+plt.show()
+
+curr_fig.savefig("autocor_1.png", bbox_inches='tight', dpi=300)
+import os
+#from google.colab import files
+#files.download("autocor_1.png")
+
+# Commented out IPython magic to ensure Python compatibility.
+# %%R
+# install.packages("Rtwalk")
+# library("Rtwalk")
+#
+
+# Commented out IPython magic to ensure Python compatibility.
+# %R -i chain_sb
+# %R iat1=IAT(chain_sb)
+# %R  iat1
+
+lag = %R iat1
+lag= math.ceil(lag)
+lag
+
+chain_sl= chain_sb[np.arange(0,len(chain_sb),lag)]  #chain without burning period
+len(chain_sl)
+
+x=np.linspace(0,18,200)
+x_pdf=ss.gamma.pdf(x,a=5,scale=1)
+plt.plot(x,x_pdf, color="red",  linewidth=3)
+plt.hist(chain_sl, bins = int(40), density=True, color='teal')
+plt.grid(linestyle='dashed')
+plt.legend(('Theoretical', 'Simulated'), bbox_to_anchor=(1.05,0.8), loc=3, borderaxespad=0, prop={'size':9})
+plt.ylabel('Density')
+plt.xlabel('$X_{t}$')
+#plt.savefig("densidadgama1.png",bbox_inches='tight',dpi=300)
+#files.download("densidadgama1.png")
+
+
+#t-walk
+
+import numpy as np
+import random
+import math
+import matplotlib.pyplot as plt
+import seaborn as sns
+import scipy.stats as ss
+from matplotlib import pyplot
+from statsmodels.graphics.tsaplots import plot_acf
+from statsmodels.graphics.tsaplots import plot_pacf
+from google.colab import files
+import scipy.stats
+import time
+
+!pip install '/content/pytwalk-1.6.0 (4).tar.gz'
+
+import pytwalk as pt
+
+#Density
+def fU(y):
+  if y[0]>0:
+    return(-4*np.log(y[0])+np.log(24)+y[0])
+  else:
+    return(np.inf)
+
+def verosimilitud(sample):
+  return(np.log(1/24)+4*np.log(sample)-sample)
+
+A=pt.pytwalk( n=1, U=fU)
+np.random.seed(0)
+random.seed(0)
+t0 = time.time()
+A.Run( T=100000, x0=500*np.ones(1), xp0=501*np.ones(1))
+t1 = time.time()
+print("--- %s seconds ---" % (t1- t0))
+
+A.Ana()
+
+AA=A.Output
+samples = AA[:, :-1]
+
+def log_densidades_gamma_r(sample):    #log density
+  return(np.log(1/24)+4*np.log(sample)-sample)
+
+vector_verosim2 = np.zeros(2000)
+for i in range(0,2000):
+  vector_verosim2[i]=log_densidades_gamma_r(samples[i])
+
+
+burnin=250
+plt.grid(linestyle='dashed')
+plt.plot(vector_verosim2)
+plt.xlabel('$X_{t}$')
+plt.axvline(burnin,-100,100,  color="red",  linestyle='dashed')
+plt.gca().axes.yaxis.set_ticklabels([])
+
+#plt.savefig("burntwa.png",bbox_inches='tight',dpi=300)
+#files.download("burntwa.png")
+
+# Commented out IPython magic to ensure Python compatibility.
+# %load_ext rpy2.ipython
+
+# Commented out IPython magic to ensure Python compatibility.
+# 
+# %%R
+# install.packages("LaplacesDemon")
+# library("LaplacesDemon")
+#
+
+# Commented out IPython magic to ensure Python compatibility.
+
+# %R -i samples
+
+cadena_sb=samples[250:99999]
+fig=plot_acf(cadena_sb, lags=50,alpha=0.05)
+plt.grid(linestyle='dashed')
+plt.title("")
+plt.xlabel('Lag')
+plt.ylim(-0.2, 1)
+plt.gca().axes.yaxis.set_ticklabels([])
+pyplot.show()
+#fig.savefig("autocor_3.png",bbox_inches='tight',dpi=300)
+#files.download("autocor_3.png")
+
+from matplotlib.collections import PolyCollection, LineCollection
+curr_fig, curr_ax = plt.subplots(figsize=(10, 8))
+plot_acf(cadena_sb, lags=70,alpha=0.05, ax=curr_ax)
+
+for item in curr_ax.collections:
+    if isinstance(item, PolyCollection):
+        item.set_facecolor("dodgerblue")
+    if isinstance(item, LineCollection):
+        item.set_color("black")
+
+for item in curr_ax.lines:
+    item.set_color("dodgerblue")
+
+plt.grid(linestyle='dashed')
+plt.title("")
+plt.xlabel('Lag')
+plt.ylim(-0.2, 1.05)
+
+plt.gca().axes.yaxis.set_ticklabels([])
+
+
+plt.show()
+
+
+curr_fig.savefig("autocor_3.png", bbox_inches='tight', dpi=300)
+import os
+files.download("autocor_3.png")
+
+# Commented out IPython magic to ensure Python compatibility.
+# %R -i cadena_sb
+# %R iat1=IAT(cadena_sb)
+# %R  iat1
+
+lag = %R iat1
+lag= math.ceil(lag)
+lag
+
+cadena_sl= cadena_sb[np.arange(0,len(cadena_sb),lag)]
+len(cadena_sl)
