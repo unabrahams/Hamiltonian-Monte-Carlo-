@@ -1,0 +1,314 @@
+# HMC 
+
+import numpy as np
+import random
+import math
+import matplotlib.pyplot as plt
+import scipy.stats as ss
+from scipy.stats import multivariate_normal
+from google.colab import files
+import time
+
+mean1= [-4, -4]
+mean2=[5, 5]
+SIGMA1=  [[1, 0.5], [0.5, 1]]
+SIGMA2= [[1, -0.3], [-0.3, 1]]
+
+SIGMA1_INV=np.linalg.inv(SIGMA1)
+SIGMA2_INV=np.linalg.inv(SIGMA2)
+
+def bivariate_mixture(q):
+ return(multivariate_normal(mean1, SIGMA1).pdf(q) * 0.4  +  0.6 * multivariate_normal(mean2, SIGMA2).pdf(q) )
+def U(q):
+ return(-np.log(bivariate_mixture(q)))
+def grad_norm_vib(q,mean, desv,inverse):
+ return(-multivariate_normal(mean, desv).pdf(q)*np.transpose(inverse.dot(np.transpose(q-mean))))
+def grad_U(q):
+ return((0.4* grad_norm_vib(q,mean1, SIGMA1, SIGMA1_INV) + 0.6*grad_norm_vib(q,mean2, SIGMA2,SIGMA2_INV))/-bivariate_mixture(q))
+
+def HMCMC(U, grad_U, epsilon, L, initial_q, N):
+  mu, sigma = 0, 1
+  q = initial_q
+  chain=q
+  rejections=0
+  for i in range(1,N):
+    p = np.array([np.random.normal(mu, sigma, q.shape[1])])
+    actual_p = p
+    for i in range(1,L+1):
+      q= q+epsilon*p
+      if(i!=L):
+        p=p-epsilon*grad_U(q)
+
+    p= p - epsilon * grad_U(q) / 2
+    p = -p
+    actual_U = U(initial_q)
+    actual_K = np.sum(actual_p**2) / 2
+    proposal_U = U(q)
+    proposal_K = np.sum(p**2) / 2
+
+    if random.uniform(0, 1) < np.exp(actual_U-proposal_U+actual_K-proposal_K):
+      chain=np.r_[chain,q]
+      initial_q=q
+
+    else:
+      chain=np.r_[chain,initial_q]
+      rejections=rejections+1
+  return(chain, rejections)
+
+q=np.array([[-9,-9]])
+np.random.seed(0)
+random.seed(0)
+t0_HMC = time.time()
+sample_h=HMCMC(U,grad_U,0.2,30,q, 5000)
+t1_HMC = time.time()
+print("--- %s seconds ---" % (t1_HMC- t0_HMC))
+
+rejection_rate= sample_h[1]/(sample_h[0].shape[0]-1)
+acceptance_rate = 1- rejection_rate
+acceptance_rate
+
+sample_th=sample_h[0]
+q1=sample_th[:,0]
+q2=sample_th[:,1]
+
+x, y = np.mgrid[-10:10:.3, -10:10:.3]
+pos = np.dstack((x, y))
+
+fig2 = plt.figure()
+ax2 = fig2.add_subplot(111)
+ax2.contourf(x, y, bivariate_mixture(pos), 10)
+plt.plot(q1, q2, 'o', c='red', alpha=0.3)
+plt.xlabel(r'$q_{1}$')
+plt.ylabel(r'$q_{2}$')
+#plt.gca().axes.yaxis.set_ticklabels([])
+#plt.savefig("mezclah1.png",bbox_inches='tight',dpi=300)
+#files.download("mezclah1.png")
+
+#plt.plot(q1, q2, "r")
+
+"""#Initial point (2.5,2.5)"""
+
+q_initial2=np.array([[2.5,2.5]])
+np.random.seed(0)
+random.seed(0)
+t2_HMC = time.time()
+sample_h2=HMCMC(U,grad_U,0.2,30,q_initial2, 5000)
+t3_HMC = time.time()
+print("--- %s seconds ---" % (t3_HMC- t2_HMC))
+
+rejection_rate2= sample_h2[1]/(sample_h2[0].shape[0]-1)
+acceptance_rate2 = 1- rejection_rate2
+acceptance_rate2
+
+sample_th2=sample_h2[0]
+q1_2=sample_th2[:,0]
+q2_2=sample_th2[:,1]
+
+x, y = np.mgrid[-10:10:.3, -10:10:.3]
+pos = np.dstack((x, y))
+
+fig2 = plt.figure()
+ax2 = fig2.add_subplot(111)
+ax2.contourf(x, y, bivariate_mixture(pos), 10)
+plt.plot(q1_2, q2_2, 'o', c='red', alpha=0.3)
+plt.xlabel(r'$q_{1}$')
+plt.ylabel(r'$q_{2}$')
+
+#plt.gca().axes.yaxis.set_ticklabels([])
+#plt.savefig("mezclah2.png",bbox_inches='tight',dpi=300)
+#files.download("mezclah2.png")
+
+
+# RWMH 
+
+import numpy as np
+import random
+import math
+import matplotlib.pyplot as plt
+import scipy.stats as ss
+from scipy.stats import multivariate_normal
+from google.colab import files
+import time
+
+def RWMH(p_ini, density, mu, sigma, N):
+  counter=0
+  sample=p_ini
+  for i in range(1, N):
+    proposal=p_ini+np.random.normal(mu, sigma, p_ini.shape[1])
+    rate = min(density(proposal)/density(p_ini),1)
+    if random.uniform(0, 1) < rate:
+      actual=proposal
+      p_ini=proposal
+
+    else:
+      actual=p_ini
+      counter=counter+1
+    sample=np.r_[sample,actual]
+  return(sample, counter)
+
+mean1= [-4, -4]
+mean2=[5, 5]
+SIGMA1=  [[1, 0.5], [0.5, 1]]
+SIGMA2= [[1, -0.3], [-0.3, 1]]
+def mixture_bivariate(q):
+ return(multivariate_normal(mean1, SIGMA1).pdf(q) * 0.4  +  0.6 * multivariate_normal(mean2, SIGMA2).pdf(q))
+
+q=np.array([[-9,-9]])
+np.random.seed(0)
+random.seed(0)
+t0_RWMH = time.time()
+sample=RWMH(q,mixture_bivariate,0,0.2, 5000*30)
+t1_RWMH = time.time()
+print("--- %s seconds---" % (t1_RWMH- t0_RWMH))
+
+rejection_rate= sample[1]/(sample[0].shape[0]-1)
+acceptance_rate = 1- rejection_rate
+acceptance_rate
+sample_t=sample[0]
+q1=sample_t[:,0][np.arange(0,len(sample_t[:,0]),30)]
+q2=sample_t[:,1][np.arange(0,len(sample_t[:,0]),30)]
+
+acceptance_rate
+
+len(q1)
+
+x, y = np.mgrid[-10:10:.2, -10:10:.2]
+pos = np.dstack((x, y))
+
+fig2 = plt.figure()
+ax2 = fig2.add_subplot(111)
+ax2.contourf(x, y, mixture_bivariate(pos), 10)
+plt.plot(q1, q2, 'o', c='red', alpha=0.3)
+plt.xlabel(r'$q_{1}$')
+plt.gca().axes.yaxis.set_ticklabels([])
+plt.savefig("mixturerw1.png",bbox_inches='tight',dpi=300)
+#plt.plot(q1, q2, "r")
+
+"""#Initial Point (2.5,2.5)"""
+
+q_se=np.array([[2.5,2.5]])
+np.random.seed(0)
+random.seed(0)
+t2_RWMH = time.time()
+sample_se=RWMH(q_se,mixture_bivariate,0,0.2, 5000*30)
+t3_RWMH = time.time()
+print("--- %s seconds ---" % (t3_RWMH- t2_RWMH))
+
+rejection_rate2= sample_se[1]/(sample_se[0].shape[0]-1)
+acceptance_rate2 = 1- rejection_rate2
+acceptance_rate2
+
+sample_set=sample_se[0]
+q1_se=sample_set[:,0][np.arange(0,len(sample_set[:,0]),35)]
+q2_se=sample_set[:,1][np.arange(0,len(sample_set[:,0]),35)]
+
+x, y = np.mgrid[-10:10:.3, -10:10:.3]
+pos = np.dstack((x, y))
+
+fig2 = plt.figure()
+ax2 = fig2.add_subplot(111)
+ax2.contourf(x, y, mixture_bivariate(pos), 10)
+plt.plot(q1_se, q2_se, 'o', c='red', alpha=0.3)
+plt.xlabel(r'$q_{1}$')
+plt.gca().axes.yaxis.set_ticklabels([])
+plt.savefig("mixturerw2.png",bbox_inches='tight',dpi=300)
+files.download("mixturerw2.png")
+
+
+# t-walk 
+
+import numpy as np
+import random
+import math
+import matplotlib.pyplot as plt
+import seaborn as sns
+import scipy.stats as ss
+from matplotlib import pyplot
+from statsmodels.graphics.tsaplots import plot_acf
+from statsmodels.graphics.tsaplots import plot_pacf
+from google.colab import files
+import scipy.stats
+import time
+from scipy.stats import multivariate_normal
+
+!pip install '/content/pytwalk-1.6.0 (3).tar.gz'
+
+import pytwalk as pt
+
+mean1= [-4, -4]
+mean2=[5, 5]
+SIGMA1=  [[1, 0.5], [0.5, 1]]
+SIGMA2= [[1, -0.3], [-0.3, 1]]
+
+SIGMA1_INV=np.linalg.inv(SIGMA1)
+SIGMA2_INV=np.linalg.inv(SIGMA2)
+
+def fU(q):   #log density
+ return(-np.log(multivariate_normal(mean1, SIGMA1).pdf(q) * 0.4  +  0.6 * multivariate_normal(mean2, SIGMA2).pdf(q) ))
+
+
+def bivariate_mixture(q):
+ return(multivariate_normal(mean1, SIGMA1).pdf(q) * 0.4  +  0.6 * multivariate_normal(mean2, SIGMA2).pdf(q) )
+
+A=pt.pytwalk( n=2, U=fU)
+
+np.random.seed(0)
+random.seed(0)
+t0 = time.time()
+A.Run( T=5000*30-1, x0=-9*np.ones(2), xp0=-8*np.ones(2))
+t1 = time.time()
+print("--- %s seconds ---" % (t1- t0))
+
+A.Ana()
+
+AA=A.Output
+samples = AA[:, :-1]
+
+q1=samples[:,0][np.arange(0,len(samples[:,0]),30)]
+q2=samples[:,1][np.arange(0,len(samples[:,0]),30)]
+
+x, y = np.mgrid[-10:10:.3, -10:10:.3]
+pos = np.dstack((x, y))
+
+fig2 = plt.figure()
+ax2 = fig2.add_subplot(111)
+ax2.contourf(x, y, bivariate_mixture(pos), 10)
+plt.plot(q1, q2, 'o', c='red', alpha=0.3)
+plt.xlabel(r'$q_{1}$')
+plt.gca().axes.yaxis.set_ticklabels([])
+#plt.savefig("mezclatwalk1.png",bbox_inches='tight',dpi=300)
+#files.download("mezclatwalk1.png")
+
+#plt.plot(q1, q2, "r")
+
+np.random.seed(0)
+random.seed(0)
+t0 = time.time()
+A.Run( T=5000*30-1, x0=2.5*np.ones(2), xp0=3.5*np.ones(2))
+t1 = time.time()
+print("--- %s seconds ---" % (t1- t0))
+
+A.Ana()
+
+AA=A.Output
+samples = AA[:, :-1]
+
+q1=samples[:,0][np.arange(0,len(samples[:,0]),30)]
+q2=samples[:,1][np.arange(0,len(samples[:,0]),30)]
+
+x, y = np.mgrid[-10:10:.3, -10:10:.3]
+pos = np.dstack((x, y))
+
+fig2 = plt.figure()
+ax2 = fig2.add_subplot(111)
+ax2.contourf(x, y, bivariate_mixture(pos), 10)
+plt.plot(q1, q2, 'o', c='red', alpha=0.3)
+plt.xlabel(r'$q_{1}$')
+plt.gca().axes.yaxis.set_ticklabels([])
+#plt.savefig("mezclatwalk2.png",bbox_inches='tight',dpi=300)
+#files.download("mezclatwalk2.png")
+
+#plt.plot(q1, q2, "r")
+
+
+
