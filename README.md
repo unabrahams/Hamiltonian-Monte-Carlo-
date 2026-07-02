@@ -17,4 +17,5 @@ The project was initially run in a Google Colab session and was later organized 
 # Authors
 
 Mario Alejandro Molina Palma
+
 Saúl Abraham Granados Carmona
